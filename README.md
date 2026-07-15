@@ -2,7 +2,8 @@
 
 Pure-Rust, from-scratch reader and forensic auditor for **ReFS** (the Windows
 Resilient File System). `refs-core` parses the on-disk structures; `refs-forensic`
-(scaffold) will grade ReFS-specific anomalies as `forensicnomicon::report::Finding`s.
+grades ReFS-specific anomalies as `forensicnomicon::report::Finding`s and recovers
+copy-on-write metadata residue.
 
 > **ReFS is reverse-engineered.** Microsoft publishes **no** official on-disk
 > specification for ReFS. Every structural fact this crate encodes comes from
@@ -41,12 +42,43 @@ assert_eq!(sb.block.block_number, 30);          // self-describing
 Import path is `refs_core` (the bare `refs` crate name is held by an unrelated
 third party on crates.io, so the import is not hijacked).
 
-### Not yet implemented (later, individually-validated phases)
+## `refs-forensic` — the audit layer
 
-Object table + virtual-address indirection, Minstore B+-tree traversal, page
-(CRC64) checksum validation, directory/file records → data runs → file-content
-extraction, and the `refs-forensic` audit surface (page-checksum mismatch, CoW
-stale-page carving, USN journal).
+Graded structural anomalies (**F-INTEGRITY**) and copy-on-write metadata-residue
+recovery (**F-CARVE**), each finding an **observation** ("consistent with …"),
+never a verdict. Full evidence + tiering in [`docs/validation.md`](docs/validation.md).
+
+```rust
+// F-INTEGRITY — structural anomalies as graded forensicnomicon Findings.
+let findings = refs_forensic::audit_findings(&image, "volume: REFSTEST");
+for f in &findings {
+    println!("{:?} {} — {}", f.severity, f.code, f.note);
+}
+
+// F-CARVE — recover directory-entry residue from stale copy-on-write pages.
+for stale in refs_forensic::recover_residue(&image) {
+    println!("stale 0x{:x} page (self-block {}): {:?}",
+             stale.table_id, stale.self_block, stale.entries);
+}
+```
+
+| Code | Signal |
+|---|---|
+| `REFS-BOOT-SIGNATURE-INVALID` | boot VBR signature ≠ `ReFS\0\0\0\0` (fail-loud value) |
+| `REFS-SELF-BLOCK-MISMATCH` | metadata block self-block ≠ its location (relocated/tampered) |
+| `REFS-METADATA-CRC-MISMATCH` | stored CRC fails over a **known** coverage range (via `audit_crc_range`; never auto-fabricated — ReFS's own range is undetermined) |
+| `REFS-CHECKPOINT-DIVERGENCE` | the superblock names zero / torn checkpoint copies |
+| `REFS-ORPHANED-OR-UNRESOLVED` | a child reference resolving to no resident page (directory-walk caller) |
+| `REFS-IMPOSSIBLE-GEOMETRY` | cluster/geometry beyond bounds (allocation-bomb guard) |
+| `REFS-STALE-METADATA-PAGE` / `REFS-CARVED-DIRECTORY-ENTRY` | an old CoW `MSB+` directory page + the entries it still holds |
+
+**Honest validation state (Tier-2).** F-INTEGRITY is validated on the real
+resident v3.14 metadata (a clean volume emits nothing false) plus crafted
+corruption. F-CARVE is validated on a **real resident stale CoW `0x600` page**
+carrying `System Volume Information`. The minted **user** files live in a
+non-resident band beyond the oracle slice (source VHD lost), so their
+deleted-recovery end-to-end is **oracle-blocked** — surfaced as such, never
+fabricated. File-content extraction and USN journal parsing are later phases.
 
 ## Robustness
 

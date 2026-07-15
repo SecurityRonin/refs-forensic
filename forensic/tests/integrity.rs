@@ -90,6 +90,51 @@ fn relocated_self_block_is_detected() {
 }
 
 #[test]
+fn resident_msb_page_with_wrong_self_block_is_flagged() {
+    // A resident MSB+ page placed at cluster 4 but self-recording a LOW resident
+    // block number (3) that disagrees with its physical cluster is consistent with
+    // a relocated/tampered page. Build a valid boot+SB region so audit_image runs
+    // the resident sweep, then plant such a page.
+    const CLUSTER: usize = 4096;
+    let mut img = BOOT_SB.to_vec(); // clean boot VBR + SUPB (128 KiB)
+                                    // Plant an MSB+ page at cluster 4 whose self-block is 3 (a low resident block
+                                    // that should equal its own cluster 4 but does not).
+    let off = 4 * CLUSTER;
+    img[off..off + 4].copy_from_slice(b"MSB+");
+    img[off + 0x20..off + 0x28].copy_from_slice(&3u64.to_le_bytes());
+    let anomalies = audit_image(&img);
+    let hit = anomalies
+        .iter()
+        .find(|a| {
+            matches!(a.kind, AnomalyKind::SelfBlockMismatch { structure, recorded, expected, .. }
+                if structure == "MSB+" && recorded == 3 && expected == 4)
+        })
+        .expect("a resident MSB+ page whose self-block != its cluster must be flagged");
+    assert_eq!(hit.severity, refs_forensic::Severity::High);
+}
+
+#[test]
+fn high_band_virtual_self_block_is_not_flagged_as_relocated() {
+    // A resident MSB+ page whose self-block is a HIGH-band virtual address (the
+    // normal ReFS addressing regime — placed by the container table, not by
+    // block==cluster) must NOT be flagged: comparing a virtual self-block to a
+    // physical cluster would false-positive on every real ReFS page.
+    const CLUSTER: usize = 4096;
+    let mut img = BOOT_SB.to_vec();
+    let off = 4 * CLUSTER;
+    img[off..off + 4].copy_from_slice(b"MSB+");
+    // A high-band self-block far above the image's own cluster count.
+    img[off + 0x20..off + 0x28].copy_from_slice(&80_384u64.to_le_bytes());
+    let anomalies = audit_image(&img);
+    assert!(
+        !anomalies
+            .iter()
+            .any(|a| matches!(a.kind, AnomalyKind::SelfBlockMismatch { structure, .. } if structure == "MSB+")),
+        "a high-band virtual self-block must not be flagged as relocated"
+    );
+}
+
+#[test]
 fn genuine_superblock_self_block_is_not_flagged() {
     // The real SUPB records self-block 30 at cluster 30 — the self-block matches
     // its location, so it must NOT be flagged as relocated (no false positive).
@@ -205,9 +250,8 @@ fn audit_findings_emits_forensicnomicon_findings_with_source() {
         .expect("a Finding is emitted");
     assert_eq!(f.severity, Some(Severity::High));
     // The finding is tagged with the producing source (analyzer + scope).
-    let src = f.source.as_ref().expect("finding carries its source");
-    assert_eq!(src.analyzer, "refs-forensic");
-    assert_eq!(src.scope, "volume: REFSTEST");
+    assert_eq!(f.source.analyzer, "refs-forensic");
+    assert_eq!(f.source.scope, "volume: REFSTEST");
     // It reads as an observation ("consistent with"), never a verdict.
     assert!(
         f.note.to_lowercase().contains("consistent with")

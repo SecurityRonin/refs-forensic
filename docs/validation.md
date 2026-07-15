@@ -67,11 +67,77 @@ guessing:
 - Truncated / hostile buffers never panic (bounds-checked LE readers, saturating
   arithmetic, `#![forbid(unsafe_code)]`).
 
-## Later phases (not P0)
+## `refs-forensic` — the audit layer (F-INTEGRITY + F-CARVE)
 
-Object table + virtual-address indirection, Minstore B+-tree traversal, page
-checksum (CRC64) validation, directory/file records → data runs → file-content
-extraction (the Tier-1 content-hash gate), and the `refs-forensic` audit surface
-(page-checksum mismatch, CoW stale-page carving, USN journal) follow in
-subsequent, individually-validated increments — each version-gated (a reader
-validated on v3.14 may break on v3.4/v3.9).
+The analyzer emits graded `forensicnomicon::report::Finding`s. Each finding is an
+**observation** ("consistent with …"), never a verdict. What is validated, and
+against what, stated plainly per the Evidence-Based Rigor discipline:
+
+### F-INTEGRITY — structural anomalies (the solid, validatable deliverable)
+
+Validated on the **real resident v3.14 metadata** (a clean volume must emit
+nothing false — the anti-LZNT1-trap regression guard, run over all 39 real `MSB+`
+pages via `REFS_TIER2_ORACLE`) plus crafted corruption of the real bytes:
+
+| Code | Detects | Validated on |
+|---|---|---|
+| `REFS-BOOT-SIGNATURE-INVALID` | boot VBR signature ≠ `ReFS\0\0\0\0` (fail-loud value) | real SUPB region + byte-flipped signature |
+| `REFS-SELF-BLOCK-MISMATCH` | a metadata block whose self-recorded block # ≠ its location (relocated/tampered) | real SUPB (self-block 30) + a planted MSB+ page |
+| `REFS-METADATA-CRC-MISMATCH` | a stored CRC that fails over a **known** coverage range | self-contained CRC-32C over an explicit span |
+| `REFS-CHECKPOINT-DIVERGENCE` | the superblock names zero / torn checkpoint copies | real SUPB with a zeroed checkpoint-count field |
+| `REFS-IMPOSSIBLE-GEOMETRY` | cluster/geometry beyond bounds (allocation-bomb guard) | real boot VBR with an absurd sectors-per-cluster |
+| `REFS-ORPHANED-OR-UNRESOLVED` | a child reference that resolves to no resident page (reserved for a directory-walk caller — not emitted on a partial slice, where non-residence is normal) | vocabulary unit test |
+
+**CRC honesty (which codes are validated vs deliberately NOT fabricated).** ReFS's
+own whole-block checksum **coverage range is undetermined** in the
+reverse-engineered references (`libfsrefs` marks it `TODO`; an empirical
+brute-force over the real SUPB self-reference did not reproduce it — see
+[`../tests/data/README.md`](../tests/data/README.md)). So `refs-forensic` **never
+auto-fabricates** a `REFS-METADATA-CRC-MISMATCH` on a clean block. The code is
+emitted **only** via `audit_crc_range(block, offset, start, end, stored)` — a
+caller-supplied, KNOWN coverage range (validated here with a self-contained CRC-32C
+whose answer key is the crate's own `crc32c`, an independent Tier-1 algorithm
+oracle). Automatic whole-block CRC verification stays absent until a future phase
+pins ReFS's range. This is the LZNT1-trap avoidance the fleet standards mandate:
+we ship the mechanism, not a guessed range that would flag every clean block.
+
+### F-CARVE — CoW metadata-residue recovery
+
+ReFS is **allocate-on-write**: an updated metadata page is written NEW at a higher
+block number and the tree re-points at it, leaving the OLD `MSB+` page behind.
+`recover_residue` surfaces `MSB+` directory pages that are not the current version
+(the highest self-block for their table id — the CoW-monotonic discriminator,
+corroborated by the object table's resolvable `0x600` → `80_384` mapping) and
+carves the directory-entry rows they still hold that the current version dropped.
+
+**Validated on real resident bytes (`REFS_TIER2_ORACLE256`):** on the 256 MiB
+v3.14 oracle, the current `0x600` root directory (self-block `80_384`, cluster
+14848) no longer carries the `System Volume Information` entry, but an **older CoW
+copy** (self-block `70_656`, cluster 5120) still does — F-CARVE surfaces that
+stale page and its carved `System Volume Information` entry. A genuine, resident
+CoW-residue recovery, not synthetic. Also validated on synthetic stale/current
+page pairs.
+
+**Oracle-blocked (stated plainly, never fabricated).** The minted **user** files
+(`dir_a` / `known1.txt` / `nested` / `big.bin`) live in a non-resident band beyond
+the 256 MiB slice, and the source VHD was detached and lost (see
+[`../tests/data/README.md`](../tests/data/README.md) P4 note), so their
+**deleted-recovery end-to-end is not reproducible**. F-CARVE returns what IS
+resident and the real-volume test asserts the non-resident files do **not** appear
+— the carver never fabricates the oracle-blocked band.
+
+### Robustness (Paranoid Gatekeeper)
+
+`#![forbid(unsafe_code)]`; every field read through bounds-checked, saturating LE
+helpers; a lying block/row/count never panics or over-reads (malformed-input tests
+sweep truncations and garbage across both `audit_image` and `recover_residue`).
+100% gate-effective line coverage on both crates (uncovered lines are
+defence-in-depth guards annotated `// cov:unreachable`).
+
+## Later phases (not yet built)
+
+File-content extraction (data runs → the Tier-1 content-hash gate against
+`Get-FileHash` on the live Windows driver), USN Change Journal parsing, and a
+pinned ReFS CRC coverage range (turning `audit_crc_range` into an automatic
+whole-block sweep) follow in subsequent, individually-validated increments — each
+version-gated (a reader validated on v3.14 may break on v3.4/v3.9).

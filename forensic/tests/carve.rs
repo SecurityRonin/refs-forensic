@@ -117,10 +117,11 @@ fn build_object_table(self_block: u64, object_id: u64, current_block: u64) -> Ve
 
 #[test]
 fn synthetic_stale_directory_page_is_carved() {
-    // Assemble an image with:
+    // Assemble an image with (pages are 16 KiB = 4 clusters, so page-aligned
+    // placements are 4 clusters apart to avoid overlap):
     //   cluster 56 : object table mapping 0x600 -> CURRENT block 80384
-    //   cluster 5  : CURRENT 0x600 page (self-block 80384) — empty of the entry
-    //   cluster 3  : STALE  0x600 page (self-block 70656) carrying "GhostDir"
+    //   cluster 8  : CURRENT 0x600 page (self-block 80384) — empty of the entry
+    //   cluster 4  : STALE  0x600 page (self-block 70656) carrying "GhostDir"
     // The carver must surface the stale page + its carved directory entry, and
     // must NOT surface the current page.
     let mut image = vec![0u8; 64 * CLUSTER];
@@ -128,8 +129,8 @@ fn synthetic_stale_directory_page_is_carved() {
         img[cl * CLUSTER..cl * CLUSTER + page.len()].copy_from_slice(page);
     };
     place(&mut image, 56, &build_object_table(56, 0x600, 80_384));
-    place(&mut image, 5, &build_dir_page(80_384, 0x600, "CurrentOnly"));
-    place(&mut image, 3, &build_dir_page(70_656, 0x600, "GhostDir"));
+    place(&mut image, 8, &build_dir_page(80_384, 0x600, "CurrentOnly"));
+    place(&mut image, 4, &build_dir_page(70_656, 0x600, "GhostDir"));
 
     let residue = recover_residue(&image);
     // The stale page (self-block 70656) is surfaced.
@@ -152,6 +153,47 @@ fn synthetic_stale_directory_page_is_carved() {
 }
 
 #[test]
+fn stale_page_after_current_in_scan_order_is_still_carved() {
+    // Place the CURRENT (higher self-block) page at a LOWER cluster and the STALE
+    // (lower self-block) page at a HIGHER cluster, so the low→high cluster scan
+    // sees the current version FIRST. Pass 1 must keep the highest self-block as
+    // current regardless of scan order; the stale page is still carved.
+    let mut image = vec![0u8; 64 * CLUSTER];
+    let place = |img: &mut [u8], cl: usize, page: &[u8]| {
+        img[cl * CLUSTER..cl * CLUSTER + page.len()].copy_from_slice(page);
+    };
+    // cluster 4 (scanned first): CURRENT, self-block 80384.
+    place(&mut image, 4, &build_dir_page(80_384, 0x600, "CurrentOnly"));
+    // cluster 8 (scanned second): STALE, self-block 70656 with "GhostDir".
+    place(&mut image, 8, &build_dir_page(70_656, 0x600, "GhostDir"));
+    let residue = recover_residue(&image);
+    let stale = residue
+        .iter()
+        .find(|r| r.self_block == 70_656)
+        .expect("the stale page is carved even when scanned after the current one");
+    assert!(stale.entries.iter().any(|e| e == "GhostDir"));
+    assert!(!residue.iter().any(|r| r.self_block == 80_384));
+}
+
+#[test]
+fn stale_page_whose_entries_all_survive_is_not_surfaced() {
+    // A lower-self-block page whose carved entries all still exist in the current
+    // version is not actionable residue — it must NOT be surfaced (no false
+    // positive on a superseded-but-identical page).
+    let mut image = vec![0u8; 64 * CLUSTER];
+    let place = |img: &mut [u8], cl: usize, page: &[u8]| {
+        img[cl * CLUSTER..cl * CLUSTER + page.len()].copy_from_slice(page);
+    };
+    place(&mut image, 4, &build_dir_page(80_384, 0x600, "Keep"));
+    place(&mut image, 8, &build_dir_page(70_656, 0x600, "Keep"));
+    let residue = recover_residue(&image);
+    assert!(
+        residue.is_empty(),
+        "a stale page whose entries all survive is not residue, got {residue:?}"
+    );
+}
+
+#[test]
 fn clean_current_only_image_yields_nothing_false() {
     // An image whose only 0x600 page IS the current object-table mapping has no
     // stale residue — the carver must return nothing (no false positive).
@@ -160,7 +202,7 @@ fn clean_current_only_image_yields_nothing_false() {
         img[cl * CLUSTER..cl * CLUSTER + page.len()].copy_from_slice(page);
     };
     place(&mut image, 56, &build_object_table(56, 0x600, 80_384));
-    place(&mut image, 5, &build_dir_page(80_384, 0x600, "CurrentOnly"));
+    place(&mut image, 8, &build_dir_page(80_384, 0x600, "CurrentOnly"));
     let residue = recover_residue(&image);
     assert!(
         residue.is_empty(),
