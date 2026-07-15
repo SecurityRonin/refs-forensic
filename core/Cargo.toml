@@ -33,6 +33,7 @@ exclude = [
 
 [dependencies]
 thiserror = { workspace = true }
+crc = { workspace = true }
 
 [lints]
 workspace = true

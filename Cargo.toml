@@ -22,6 +22,7 @@ readme = "README.md"
 refs-core = { path = "core", version = "0.1.0" }
 forensicnomicon = "1"
 thiserror = "2"
+crc = "3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
