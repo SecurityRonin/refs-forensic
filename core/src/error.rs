@@ -59,6 +59,36 @@ pub enum RefsError {
         offset: u64,
     },
 
+    /// The object table did not contain the requested object identifier.
+    ///
+    /// Surfaced (rather than an empty listing) when a directory walk asks the
+    /// object table for an id it does not carry — the fail-loud, show-the-value
+    /// standard: the missing id is named so the investigator can tell "empty
+    /// directory" from "object not found".
+    #[error("object id {object_id:#x} not found in the object table")]
+    ObjectIdNotFound {
+        /// The object identifier that was looked up and not found.
+        object_id: u64,
+    },
+
+    /// An object's tree-root block number is a **virtual address** that this
+    /// phase cannot resolve to a physical location.
+    ///
+    /// In ReFS v3.x the object table stores *virtual* block numbers; resolving
+    /// them to physical offsets requires the container table (a later phase).
+    /// When a lookup lands on a block outside the physically-resident region,
+    /// the walk fails loud with the offending virtual block number rather than
+    /// silently returning an empty result (a bootstrap/resolution failure must
+    /// never be indistinguishable from a genuinely empty directory).
+    #[error(
+        "object tree-root block {block} is a virtual address outside the resident region \
+         (needs container-table translation — not yet implemented)"
+    )]
+    UnresolvedVirtualBlock {
+        /// The unresolved virtual block number named by the object table.
+        block: u64,
+    },
+
     /// The ReFS major format version is not one this reader supports.
     ///
     /// This reader targets **ReFS v3.x** (Server 2016+/Win10 1803+/Win11). A v1

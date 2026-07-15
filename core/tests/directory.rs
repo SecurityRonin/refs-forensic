@@ -11,7 +11,7 @@
 //! **P2 reachability wall (real-volume Doer-Checker, 2026-07-15).** The minted
 //! files live in the **root directory (object id `0x600`)** B+tree. On the real
 //! oracle the object tree's branch node (cluster 40/44) points every child at
-//! **virtual block `34_494_087_168`** — a virtual address ~132 TiB into the
+//! **virtual block `34_494_087_168`** — a virtual address ~132 `TiB` into the
 //! volume, far outside the sparse physical partition. A full scan of the 16 MiB
 //! partition head finds **zero** directory-index rows and **zero** occurrences
 //! of the minted filenames (`dir_a`, `nested`, `known1.txt`, `big.bin`): the
@@ -236,6 +236,27 @@ fn parse_directory_skips_base_and_name_records() {
     assert_eq!(entries[0].name, "only.txt");
 }
 
+#[test]
+fn parse_directory_type0_metadata_file_is_listed_without_metadata() {
+    // Directory entry type 0 = FS-metadata file: it is a named entry but carries
+    // neither a child object id nor the file/directory metadata this phase
+    // models. It is still listed (name visible), with metadata None.
+    let rows = vec![(
+        dir_entry_key(0, "$metadata_file"),
+        vec![0u8; 32], // arbitrary value; type-0 layout is not modelled here
+    )];
+    let page = build_minstore_page(0, false, &rows);
+    let entries = parse_directory(&page).expect("parses");
+    assert_eq!(entries.len(), 1, "the type-0 entry is listed");
+    assert_eq!(entries[0].name, "$metadata_file");
+    assert!(!entries[0].is_directory, "type-0 is not a directory");
+    assert_eq!(entries[0].object_id, None, "no child object id");
+    assert!(
+        entries[0].metadata.is_none(),
+        "type-0 FS-metadata file carries no modelled metadata"
+    );
+}
+
 // ── File / directory metadata ────────────────────────────────────────────────
 
 #[test]
@@ -448,7 +469,7 @@ fn odd_length_utf16_name_does_not_panic() {
 // ── Object-tree builder (shared with the P1 layout) ──────────────────────────
 
 /// A synthetic object-tree leaf whose rows are `(object_id, root_block_number)`
-/// — identical to the P1 test builder so list_dir consumes a faithful table.
+/// — identical to the P1 test builder so `list_dir` consumes a faithful table.
 fn build_object_tree(entries: &[(u64, u64)]) -> Vec<u8> {
     let rows: Vec<(Vec<u8>, Vec<u8>)> = entries
         .iter()

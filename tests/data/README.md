@@ -98,9 +98,31 @@ Partition offset in the VHD: **16,777,216** (16 MiB).
 > Parallels Windows 11 VM and dumping `\\.\PhysicalDrive` at the partition
 > offset — confirmed the checkpoint lies outside the physical partition.)
 
+> **NOTE — the root DIRECTORY tree is NOT reachable in the oracle either (ReFS
+> v3 virtual addressing, P2).** The minted files live under the root directory
+> (object id `0x600`). On the real oracle the object tree's level-1 **branch**
+> node (cluster 40/44) points every child at **virtual block `34_494_087_168`**
+> — a virtual address ~132 TiB into the volume, far outside the sparse physical
+> partition. A full scan of the 16 MiB head (P2 Doer-Checker, 2026-07-15) finds
+> **zero** directory-index rows (record type `0x0030`) and **zero** occurrences
+> of the minted filenames `dir_a` / `nested` / `known1.txt` / `big.bin`: the
+> root-directory B+tree pages are **not physically resident**. Every resident
+> `MSB+` page (clusters 30–3584) is system metadata (object table, allocators,
+> schema, container/attribute tables). Reaching `0x600`'s directory page needs
+> the container table (virtual→physical translation), a later phase — pulling a
+> larger *physical* slice cannot help, because the address is virtual, not a
+> byte offset. So `refs_core::list_dir(&oracle, 0x600)` deliberately fails LOUD
+> with `RefsError::UnresolvedVirtualBlock`/`ObjectIdNotFound`
+> (`core/tests/directory.rs::real_volume_root_directory_is_unreachable_env_gated`)
+> rather than fabricate a listing; the directory/file-record **parsing**
+> (`parse_directory` / `FileMetadata` / `find_by_path`) is validated **Tier-3**
+> against synthetic pages built to the exact libfsrefs directory-object layout.
+
 <!-- TODO(corpus-catalog): also record in issen/docs/corpus-catalog.md the P1
      verified contents above (object tree @ cluster 56, checkpoint = virtual
-     addresses). NOT done here — this task touches ONLY refs-forensic. -->
+     addresses) AND the P2 finding (root directory 0x600 behind virtual block
+     34_494_087_168, not resident; directory parsing is Tier-3). NOT done here —
+     this task touches ONLY refs-forensic. -->
 
 ### CRC coverage-range — undetermined (do not fabricate)
 
