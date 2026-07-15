@@ -118,11 +118,107 @@ Partition offset in the VHD: **16,777,216** (16 MiB).
 > (`parse_directory` / `FileMetadata` / `find_by_path`) is validated **Tier-3**
 > against synthetic pages built to the exact libfsrefs directory-object layout.
 
+> **CORRECTION (P3, 2026-07-15) — `34_494_087_168` was a MIS-IDENTIFIED
+> checksum descriptor, not a virtual block.** P3 re-examined the object/branch
+> record values byte-for-byte: the object record value's real tree-root block
+> number sits at value `+32` (the metadata block reference's first block
+> number). The `34_494_087_168` (`0x8_0802_0000`) that P2 read as a virtual
+> block is the **checksum descriptor** bytes at value `+64`
+> (`00 00 02 08 08 00 00 00` = unknown `0x0000`, checksum type `0x02` = CRC64,
+> data offset `0x08`, data size `0x0008`) — a constant template that repeats on
+> every record, which is why it looked like "every child points at the same
+> block." The real root-directory tree-root block on the fresh P3 volume is
+> `80_384` — a small, resolvable virtual block. The P2 wall was real (the root
+> dir page is non-resident in the 16 MiB head), but its stated *cause* is
+> corrected here.
+
+> **P3 — the container table CRACKS virtual→physical; the root-dir page now
+> resolves (2026-07-15).** P3 builds the ReFS **container table** (`libfsrefs`
+> §8) — the virtual→physical band map — and translates. Mechanism (byte-verified
+> on a fresh v3.14 mint): a **band** is `band_size / cluster_size = 67_108_864 /
+> 4096 = 16_384` clusters; a virtual block decomposes into
+> `container_index = vblock / 16_384` and `offset = vblock % 16_384`; the
+> container tree's 160-byte records give each band's physical base cluster (value
+> `+144` = LCN, `+152` = cluster count). The `container_index → physical_base`
+> map is bootstrapped from resident pages' self-block-numbers (ground truth:
+> `self % 16_384 == phys_cluster - LCN` holds on **every** resident page).
+> **Result:** object `0x600` → block `80_384` → container 4, offset `14_848` →
+> **physical cluster `14_848`**, and the page there has self-block-number exactly
+> `80_384` and table id `0x600` — resolution correct by self-block round-trip.
+> **Honest remaining wall:** the resolved `0x600` page is an *index-root* whose
+> directory *entry* records live one Minstore indirection deeper, in a
+> non-resident band, so the real minted-file *listing* still cannot be produced
+> here (`list_dir(0x600)` stays fail-loud); that descent is `parse_directory`'s
+> job (P2 layer), not the container table's.
+
+#### refs_v314_container_tree_page.bin, refs_v314_object_table_0x600.bin, refs_v314_dir_0x600_root.bin (committed, always-on — P3)
+
+- **Class:** REAL-self Tier-2 (self-mint), three single 16 KiB `MSB+` metadata
+  pages extracted from a **fresh** ReFS v3.14 volume (see the P3 mint below).
+- **`refs_v314_container_tree_page.bin`** — the real container tree (`libfsrefs`
+  §8) leaf, table id `0xB`, self-block `16_384`, **88** 160-byte container
+  records (band_id → physical LCN). MD5 `3194738db0c407f01fa053bc9773a382`,
+  SHA-256 `a152d615d044bc854fe0e0bbad548b04fab92105987e6cd717e5dc62d9ed7256`.
+- **`refs_v314_object_table_0x600.bin`** — the object table (table id `0x2`)
+  carrying `0x600` → tree-root block `80_384`. Self-block `67_588`. MD5
+  `d5e83093e33c4f982a68aff075e55e48`, SHA-256
+  `b9c14ce18575c3b40303f19e922427d53cca97d7c76d883d238ab634ebf02018`.
+- **`refs_v314_dir_0x600_root.bin`** — the `0x600` directory root page the
+  container resolver lands on (table id `0x600`, self-block `80_384`). MD5
+  `192c772fd7882d595a8308a01573242b`, SHA-256
+  `46eff658227b14e5d2d138de3cdac10186276febac8afec2b19dda4e7576d731`.
+- **Consumed by:** `core/tests/container.rs` (P3 container-table + resolver
+  tests, always-on).
+- **Redistribution:** self-authored bytes of a minted volume; no third-party IP.
+
+#### refs_container_head256.bin (gitignored — NOT committed, P3 oracle)
+
+- **Class:** REAL-self Tier-2 (self-mint).
+- **Source:** first **256 MiB** of a **fresh** ReFS v3.14 partition (see the P3
+  mint below) — reaches the object table (cluster 2052), the container tree
+  (cluster 16384), and the resolved `0x600` directory root (cluster 14848).
+- **MD5:** `8d09e81af8b939151fe0ae81d90b4623`
+- **SHA-256:** `efe5eb01594c56e486cf4845a2cd948d4daf73c3243d7f1076e0314a1640a679`
+- **Consumed by:** `core/tests/container.rs::real_volume_container_resolves_root_directory_page_env_gated`,
+  gated on `REFS_TIER2_ORACLE256`. Re-mint from the P3 generator to reproduce;
+  skips cleanly when absent.
+
+##### P3 generator (fresh v3.14 mint + 256 MiB slice)
+
+The original 60 GB VHD that produced `refs_partition_head.bin` was detached and
+gone (only an empty leftover `refs-test.vhdx` with no ReFS remained), so P3
+minted a **fresh** volume. This means the P3 fixtures are a **different** volume
+than the P1/P2 16 MiB oracle — the container-resolver facts are re-verified on
+this new volume, not cross-referenced to the old head. Minted 2026-07-15 on the
+Parallels **Windows 11** VM (build 26200) via a script run through the
+`\\Mac\Cases` shared folder (`C:\cases5\mint5.ps1` / `slice256.ps1`), load-bearing
+steps:
+
+```powershell
+# 60 GiB dynamic VHD via diskpart (Dev Drive needs >= 50 GB), attach, GPT,
+# primary partition; disk number detected as the newly-attached disk.
+diskpart /s dp_create.txt        # create/attach/convert gpt/create partition primary
+$part = Get-Partition -DiskNumber $diskNum | ? { $_.Type -ne 'Reserved' } | sort Size -desc | select -First 1
+Format-Volume -Partition $part -FileSystem ReFS -DevDrive -NewFileSystemLabel REFSTEST -Confirm:$false
+$part | Add-PartitionAccessPath -AccessPath 'R:\'
+fsutil fsinfo refsinfo R:        # ReFS 3.14, 4096-byte clusters, band size 67108864
+New-Item -ItemType Directory 'R:\dir_a\nested' -Force
+"hello refs P0" | Out-File 'R:\dir_a\known1.txt' -Encoding utf8 -NoNewline
+fsutil file createNew 'R:\dir_a\nested\big.bin' 1048576
+# read the first 256 MiB of the partition from \\.\PhysicalDrive<n> at the
+# partition offset (16777216) -> refs_container_head256.bin ; copy to the share
+diskpart /s dp_detach.txt        # detach vdisk
+```
+
 <!-- TODO(corpus-catalog): also record in issen/docs/corpus-catalog.md the P1
      verified contents above (object tree @ cluster 56, checkpoint = virtual
-     addresses) AND the P2 finding (root directory 0x600 behind virtual block
-     34_494_087_168, not resident; directory parsing is Tier-3). NOT done here —
-     this task touches ONLY refs-forensic. -->
+     addresses), the P2 finding (root directory 0x600 non-resident; directory
+     parsing is Tier-3), and the P3 container-table crack (band size 16384
+     clusters; container tree 160-byte records band_id->LCN; 0x600 block 80384 ->
+     container 4 offset 14848 -> cluster 14848; fresh v3.14 mint fixtures
+     refs_v314_*.bin + gitignored refs_container_head256.bin md5
+     8d09e81af8b939151fe0ae81d90b4623). NOT done here — this task touches ONLY
+     refs-forensic. -->
 
 ### CRC coverage-range — undetermined (do not fabricate)
 

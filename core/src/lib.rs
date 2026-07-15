@@ -31,6 +31,7 @@
 mod boot;
 pub mod bytes;
 mod checkpoint;
+mod container;
 mod directory;
 mod error;
 mod metablock;
@@ -39,6 +40,7 @@ mod superblock;
 
 pub use boot::{BootSector, REFS_FSRS, REFS_SIGNATURE};
 pub use checkpoint::Checkpoint;
+pub use container::{decompose_virtual_block, ContainerRecord, ContainerResolver, ContainerTable};
 pub use directory::{find_by_path, list_dir, parse_directory, DirEntry, FileMetadata};
 pub use error::RefsError;
 pub use metablock::{crc32c, crc64_ecma, MetaBlock, REFS_METADATA_PAGE_SIZE};

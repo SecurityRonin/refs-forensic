@@ -8,6 +8,10 @@
 # boot+superblock slice (refs_boot_superblock.bin) is the committed always-on
 # subset. Re-mint from tests/data/README.md; env-gated on REFS_TIER2_ORACLE.
 /tests/data/refs_partition_head.bin
+# The 256 MiB container-head slice (fresh v3.14 mint) is the P3 real-volume
+# oracle — too large to commit; env-gated on REFS_TIER2_ORACLE256. The three
+# 16 KiB pages extracted from it (refs_v314_*.bin) ARE committed.
+/tests/data/refs_container_head256.bin
 /tests/data/*.vhdx
 /tests/data/*.raw
 

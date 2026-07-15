@@ -35,9 +35,9 @@
 //!   resident metadata (each resident page's self-block-number is ground truth:
 //!   `base[self/band] = phys_cluster - self%band`).
 //!
-//! **Result (real v3.14 oracle):** object `0x600` → block **80_384** →
-//! container index 4, offset 14_848 → **physical cluster 14_848**, and the page
-//! physically at cluster 14_848 has self-block-number exactly 80_384 and table
+//! **Result (real v3.14 oracle):** object `0x600` → block **`80_384`** →
+//! container index 4, offset `14_848` → **physical cluster `14_848`**, and the page
+//! physically at cluster `14_848` has self-block-number exactly `80_384` and table
 //! id `0x600` — the resolution is correct by the self-block round-trip. The
 //! virtual→physical wall P2 hit is **cracked**.
 //!
@@ -59,14 +59,14 @@ const BAND_CLUSTERS: u64 = 16_384;
 // ── Committed real v3.14 pages (16 KiB each, self-mint Tier-2) ───────────────
 
 /// The real container-tree leaf (`libfsrefs` §8), table id `0xB`, self-block
-/// 16_384. 88 container records of 160 bytes.
+/// `16_384`. 88 container records of 160 bytes.
 const CONTAINER_TREE_PAGE: &[u8] =
     include_bytes!("../../tests/data/refs_v314_container_tree_page.bin");
 /// The real object-table page (table id `0x2`) that carries the `0x600` root
-/// directory object → tree-root block 80_384.
+/// directory object → tree-root block `80_384`.
 const OBJECT_TABLE_0X600_PAGE: &[u8] =
     include_bytes!("../../tests/data/refs_v314_object_table_0x600.bin");
-/// The real `0x600` directory root page (table id `0x600`, self-block 80_384),
+/// The real `0x600` directory root page (table id `0x600`, self-block `80_384`),
 /// the page the container resolver lands on.
 const DIR_0X600_ROOT_PAGE: &[u8] = include_bytes!("../../tests/data/refs_v314_dir_0x600_root.bin");
 
