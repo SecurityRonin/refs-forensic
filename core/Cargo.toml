@@ -1,0 +1,38 @@
+[package]
+name = "refs-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Pure-Rust from-scratch ReFS (Resilient File System) reader — boot VBR, superblock, version detection, over any byte source. Reverse-engineered format (no official Microsoft spec)"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/refs-core"
+readme.workspace = true
+authors.workspace = true
+keywords = ["forensics", "refs", "filesystem", "dfir", "parser"]
+categories.workspace = true
+# Integration tests live under /tests and read fixtures from the repo-root
+# tests/data via include_bytes!/env-gated paths, outside this package. They are
+# repo-CI artifacts, not consumer-facing — excluding them keeps the published
+# tarball self-contained and well under the ~10 MiB crates.io limit.
+exclude = [
+    "/fuzz",
+    "/.github",
+    "/docs",
+    "/tests",
+    "/tests/data/*.bin",
+    "/tests/data/*.raw",
+    "/tests/data/*.vhdx",
+]
+
+# The bare `refs` crate name on crates.io is TAKEN by an unrelated, actively
+# published third-party crate (hundreds of versions), so we do NOT hijack the
+# import path — the crate is `refs-core` and imports as `refs_core` (the same
+# call the fleet makes for the popular-name collision, e.g. `ntfs-core`).
+
+[dependencies]
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

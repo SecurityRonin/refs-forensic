@@ -1,0 +1,31 @@
+[package]
+name = "refs-forensic"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Forensic anomaly auditor for ReFS (Resilient File System) — scaffold over refs-core. Reverse-engineered format (no official Microsoft spec)"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/refs-forensic"
+readme.workspace = true
+authors.workspace = true
+keywords = ["forensics", "refs", "dfir", "carving", "filesystem"]
+categories.workspace = true
+exclude = [
+    "/fuzz",
+    "/.github",
+    "/docs",
+    "/tests",
+    "/tests/data/*.bin",
+    "/tests/data/*.raw",
+    "/tests/data/*.vhdx",
+]
+
+[dependencies]
+refs-core = { workspace = true }
+# ReFS structure knowledge + the shared report model (Severity/Observation).
+forensicnomicon = { workspace = true }
+
+[lints]
+workspace = true
