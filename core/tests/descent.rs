@@ -51,8 +51,8 @@ const BAND_CLUSTERS: u64 = 16_384;
 /// Write a v3 metadata-block header (80 bytes): signature, table id at +72, and
 /// the self (first) block number at +0x20 — the field the container resolver
 /// reads to learn a band's physical base.
-fn write_header(page: &mut [u8], signature: &[u8; 4], self_block: u64, table_id: u64) {
-    page[0..4].copy_from_slice(signature);
+fn write_header(page: &mut [u8], signature: [u8; 4], self_block: u64, table_id: u64) {
+    page[0..4].copy_from_slice(&signature);
     page[4..8].copy_from_slice(&2u32.to_le_bytes());
     page[12..16].copy_from_slice(&0xf890_ec89u32.to_le_bytes());
     page[0x20..0x28].copy_from_slice(&self_block.to_le_bytes());
@@ -70,7 +70,7 @@ fn build_page(
     rows: &[(Vec<u8>, Vec<u8>)],
 ) -> Vec<u8> {
     let mut page = vec![0u8; PAGE];
-    write_header(&mut page, b"MSB+", self_block, table_id);
+    write_header(&mut page, *b"MSB+", self_block, table_id);
     let node_hdr = 0x100usize;
     let nho_field = 0x50usize;
     page[nho_field..nho_field + 4].copy_from_slice(&((node_hdr - nho_field) as u32).to_le_bytes());
@@ -161,6 +161,14 @@ fn branch_row(separator: &[u8], child_block: u64) -> (Vec<u8>, Vec<u8>) {
     (separator.to_vec(), val)
 }
 
+/// The cluster every descent test places the object table at (the cluster
+/// `list_dir` reads it from). Its self-block is set equal to this cluster so the
+/// container resolver derives a *consistent* band-0 base (`base[0] = cluster -
+/// cluster%band = 0`) — matching the band-0, self-block-equals-cluster layout of
+/// the synthetic branch/leaf pages, exactly as the real volume's pages are
+/// self-consistent within their band.
+const OBJECT_TABLE_CLUSTER: u64 = 56;
+
 /// An object-tree leaf whose rows are `(object_id, tree_root_block)` — the P1/P2
 /// verified object-table layout (id at key+8, block at value+0x20).
 fn build_object_tree(entries: &[(u64, u64)]) -> Vec<u8> {
@@ -174,7 +182,7 @@ fn build_object_tree(entries: &[(u64, u64)]) -> Vec<u8> {
             (key, val)
         })
         .collect();
-    build_page(2, 0x2, 0, false, &rows)
+    build_page(OBJECT_TABLE_CLUSTER, 0x2, 0, false, &rows)
 }
 
 /// Place a page at cluster `cl` in `img`.
@@ -188,7 +196,7 @@ fn place(img: &mut [u8], cl: usize, page: &[u8]) {
 /// bases from their self-blocks, exactly as it does on the real volume.
 fn resolve_or_panic(image: &[u8], block: u64) -> usize {
     let r = ContainerResolver::from_resident_image(image, BAND_CLUSTERS);
-    r.resolve_virtual(block).expect("block resolves") as usize / 1
+    r.resolve_virtual(block).expect("block resolves") as usize
 }
 
 // ── The headline: list_dir walks branch → leaf ───────────────────────────────

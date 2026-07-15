@@ -41,7 +41,9 @@ mod superblock;
 pub use boot::{BootSector, REFS_FSRS, REFS_SIGNATURE};
 pub use checkpoint::Checkpoint;
 pub use container::{decompose_virtual_block, ContainerRecord, ContainerResolver, ContainerTable};
-pub use directory::{find_by_path, list_dir, parse_directory, DirEntry, FileMetadata};
+pub use directory::{
+    find_by_path, list_dir, parse_directory, walk_directory, DirEntry, FileMetadata,
+};
 pub use error::RefsError;
 pub use metablock::{crc32c, crc64_ecma, MetaBlock, REFS_METADATA_PAGE_SIZE};
 pub use minstore::{MinstorePage, MinstoreRow, ObjectTable, PageRef, REFS_ROOT_DIRECTORY_ID};

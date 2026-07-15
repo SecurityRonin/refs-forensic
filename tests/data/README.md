@@ -132,6 +132,35 @@ Partition offset in the VHD: **16,777,216** (16 MiB).
 > dir page is non-resident in the 16 MiB head), but its stated *cause* is
 > corrected here.
 
+> **P4 — the directory-tree DESCENT is implemented; the minted user files stay
+> BLOCKED (non-resident band, source VHD gone), NOT fabricated (2026-07-15).**
+> P4 walks the directory Minstore B+-tree from a tree-root through **branch**
+> nodes (node-type flag `0x01`, each row's value a format-v3 metadata block
+> reference whose first block number at value `+0` is a child page's virtual
+> block — byte-verified on the real v3.14 branch nodes at clusters 76/80) down to
+> the **leaf** pages, resolving every child virtual→physical through the P3
+> `ContainerResolver` and validating each page by a self-block round-trip.
+> `list_dir(0x600)`/`find_by_path` now descend the tree.
+> **Real-volume result (256 MiB oracle, Doer-Checker):** the descent reads a
+> genuine resident directory entry — `walk_directory(0x600 older CoW block
+> 70_656)` returns **"System Volume Information"** (a directory ReFS
+> auto-creates) — proving the descent works on real bytes. The minted user files
+> `dir_a`/`known1.txt`/`nested`/`big.bin` are **NOT resident**: zero UTF-16 hits
+> anywhere in the 256 MiB slice, and the object table's `0x600` → block `80_384`
+> root page (cluster 14848) carries an **empty `$I30 $INDEX_ROOT`** — its
+> populated `$INDEX_ALLOCATION` lives in a band at partition offset **≥
+> `268_435_456` bytes (> 256 MiB)**, beyond the slice. The **precise remaining
+> wall:** the populated `0x600` index-allocation leaf is at partition-relative
+> offset ≥ 256 MiB. A **VM re-pull is impossible** — the fresh 60 GB P3 VHD was
+> detached and lost; the only surviving leftover `refs-test.vhdx` has **no ReFS**
+> at the partition offset (confirmed by `qemu-img convert` → 512 MiB raw: no ReFS
+> signature, no `System Volume Information`, no minted files), so there is no
+> volume to pull. So `list_dir(0x600)` over the real oracle stays fail-loud
+> (`ObjectIdNotFound`, because the resident object table at cluster 56 on this
+> fresh volume is table `0x3`, not the `0x600`-bearing table at cluster 2052) and
+> NEVER fabricates the absent files. The descent is validated Tier-3 on synthetic
+> branch→leaf trees + the resident `System Volume Information` entry.
+
 > **P3 — the container table CRACKS virtual→physical; the root-dir page now
 > resolves (2026-07-15).** P3 builds the ReFS **container table** (`libfsrefs`
 > §8) — the virtual→physical band map — and translates. Mechanism (byte-verified
@@ -217,8 +246,11 @@ diskpart /s dp_detach.txt        # detach vdisk
      clusters; container tree 160-byte records band_id->LCN; 0x600 block 80384 ->
      container 4 offset 14848 -> cluster 14848; fresh v3.14 mint fixtures
      refs_v314_*.bin + gitignored refs_container_head256.bin md5
-     8d09e81af8b939151fe0ae81d90b4623). NOT done here — this task touches ONLY
-     refs-forensic. -->
+     8d09e81af8b939151fe0ae81d90b4623), and the P4 directory-descent finding
+     (branch nodes: value+0 = child virtual block, verified on real clusters
+     76/80; descent reads the resident "System Volume Information" 0x600 entry;
+     minted user files non-resident beyond 256 MiB, source VHD gone -> blocked,
+     not fabricated). NOT done here — this task touches ONLY refs-forensic. -->
 
 ### CRC coverage-range — undetermined (do not fabricate)
 

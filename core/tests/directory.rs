@@ -55,10 +55,26 @@ fn write_header(page: &mut [u8], signature: [u8; 4], block_number: u64) {
     page[32..40].copy_from_slice(&block_number.to_le_bytes());
 }
 
-/// Build a synthetic Minstore page (the P1 layout) from `(key, value)` rows.
+/// Build a synthetic Minstore page (the P1 layout) from `(key, value)` rows,
+/// with self-block `42` (used where the page's own block number is irrelevant —
+/// `parse_directory`-only tests that never resolve the page through the object
+/// table + container resolver).
 fn build_minstore_page(level: u8, is_branch: bool, rows: &[(Vec<u8>, Vec<u8>)]) -> Vec<u8> {
+    build_minstore_page_at(42, level, is_branch, rows)
+}
+
+/// Build a synthetic Minstore page whose self-block-number is `self_block` — set
+/// this equal to the placement cluster for pages resolved through `list_dir` /
+/// `find_by_path`, so the container resolver's self-block round-trip accepts the
+/// page (the real volume's pages are self-consistent within their band).
+fn build_minstore_page_at(
+    self_block: u64,
+    level: u8,
+    is_branch: bool,
+    rows: &[(Vec<u8>, Vec<u8>)],
+) -> Vec<u8> {
     let mut page = vec![0u8; PAGE];
-    write_header(&mut page, *b"MSB+", 42);
+    write_header(&mut page, *b"MSB+", self_block);
     let node_hdr = 0x100usize;
     let nho_field = 80usize;
     page[nho_field..nho_field + 4].copy_from_slice(&((node_hdr - nho_field) as u32).to_le_bytes());
@@ -295,10 +311,29 @@ fn list_dir_resolves_object_id_through_object_table_to_a_resident_page() {
     // list_dir(image, object_id) path end to end (object table -> block ->
     // resident offset -> directory rows), independent of the (unreachable)
     // real-volume virtual addressing.
-    let dir_page = minted_root_page();
     // Place the directory page at cluster 8 of the image; its resident block
-    // number therefore equals 8 (low band: block N < 65536 maps to cluster N).
+    // number (self-block) therefore equals 8 (low band: block N < 65536 maps to
+    // cluster N) so the container resolver's self-block round-trip accepts it.
     let dir_cluster = 8u64;
+    let dir_page = build_minstore_page_at(
+        dir_cluster,
+        0,
+        false,
+        &[
+            (
+                dir_entry_key(2, "dir_a"),
+                dir_value(0x701, FT_CRE, FT_MOD, FT_MCH, FT_ACC, 0x10),
+            ),
+            (
+                dir_entry_key(1, "known1.txt"),
+                file_value(FT_CRE, FT_MOD, FT_MCH, FT_ACC, 0x20, 13, 4096),
+            ),
+            (
+                dir_entry_key(2, "nested"),
+                dir_value(0x702, FT_CRE, FT_MOD, FT_MCH, FT_ACC, 0x10),
+            ),
+        ],
+    );
     let image_len = (dir_cluster as usize + 4) * CLUSTER; // room for the 16 KiB page
     let mut image = vec![0u8; image_len.max(64 * CLUSTER)];
     // Object table at cluster 56 (the real-volume convention), mapping 0x600 ->
@@ -363,23 +398,23 @@ fn find_by_path_resolves_a_nested_path() {
     // return the file metadata.
     let mut image = vec![0u8; 128 * CLUSTER];
 
-    // Root directory page at cluster 8: contains dir_a (-> obj 0x701).
+    // Root directory page at cluster 8 (self-block 8): contains dir_a (-> 0x701).
+    let root_cluster = 8u64;
     let root_rows = vec![(
         dir_entry_key(2, "dir_a"),
         dir_value(0x701, FT_CRE, FT_MOD, FT_MCH, FT_ACC, 0x10),
     )];
-    let root_page = build_minstore_page(0, false, &root_rows);
-    let root_cluster = 8u64;
+    let root_page = build_minstore_page_at(root_cluster, 0, false, &root_rows);
     let ro = root_cluster as usize * CLUSTER;
     image[ro..ro + PAGE].copy_from_slice(&root_page);
 
-    // dir_a directory page at cluster 12: contains known1.txt (file, 13 bytes).
+    // dir_a directory page at cluster 12 (self-block 12): known1.txt (file, 13B).
+    let dira_cluster = 12u64;
     let dira_rows = vec![(
         dir_entry_key(1, "known1.txt"),
         file_value(FT_CRE, FT_MOD, FT_MCH, FT_ACC, 0x20, 13, 4096),
     )];
-    let dira_page = build_minstore_page(0, false, &dira_rows);
-    let dira_cluster = 12u64;
+    let dira_page = build_minstore_page_at(dira_cluster, 0, false, &dira_rows);
     let do_ = dira_cluster as usize * CLUSTER;
     image[do_..do_ + PAGE].copy_from_slice(&dira_page);
 
@@ -470,6 +505,9 @@ fn odd_length_utf16_name_does_not_panic() {
 
 /// A synthetic object-tree leaf whose rows are `(object_id, root_block_number)`
 /// — identical to the P1 test builder so `list_dir` consumes a faithful table.
+/// Its self-block is `56` (the cluster the tests place it at, the cluster
+/// `list_dir` reads the object table from) so the container resolver's
+/// self-block round-trip accepts it.
 fn build_object_tree(entries: &[(u64, u64)]) -> Vec<u8> {
     let rows: Vec<(Vec<u8>, Vec<u8>)> = entries
         .iter()
@@ -481,7 +519,7 @@ fn build_object_tree(entries: &[(u64, u64)]) -> Vec<u8> {
             (key, val)
         })
         .collect();
-    build_minstore_page(0, false, &rows)
+    build_minstore_page_at(56, 0, false, &rows)
 }
 
 // ── Env-gated real-volume cross-check: the honest reachability wall ──────────
