@@ -57,6 +57,10 @@ fn boot_version_is_3_14() {
     assert_eq!(boot.major_version, 3, "Major format version (fsutil 3.x)");
     assert_eq!(boot.minor_version, 14, "Minor format version (fsutil 3.14)");
     assert!(boot.is_v3(), "3.14 is a v3.x volume");
+    // The v3 volume passes the version gate (the accept path, vs the v1-reject
+    // path exercised separately).
+    boot.require_v3()
+        .expect("a real v3.14 volume must pass require_v3");
 }
 
 // ── Fail-loud gates (the RESEARCH.md "never silently misparse" mandate) ──────

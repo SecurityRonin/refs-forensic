@@ -7,16 +7,6 @@
 //! "field absent" from "field is zero" bounds-check the buffer length up front
 //! and surface [`crate::RefsError::Truncated`].
 
-/// Read a little-endian `u16` at `off`, or `0` if out of range.
-#[must_use]
-pub fn le_u16(data: &[u8], off: usize) -> u16 {
-    let mut b = [0u8; 2];
-    if let Some(s) = data.get(off..off + 2) {
-        b.copy_from_slice(s);
-    }
-    u16::from_le_bytes(b)
-}
-
 /// Read a little-endian `u32` at `off`, or `0` if out of range.
 #[must_use]
 pub fn le_u32(data: &[u8], off: usize) -> u32 {
@@ -41,4 +31,21 @@ pub fn le_u64(data: &[u8], off: usize) -> u64 {
 #[must_use]
 pub fn u8_at(data: &[u8], off: usize) -> u8 {
     data.get(off).copied().unwrap_or(0)
+}
+
+/// Best-effort ASCII rendering of a byte slice — printable ASCII kept, every
+/// other byte shown as `.`. Used to render the offending value legibly in
+/// fail-loud "unrecognized signature" errors (show the unrecognized value).
+#[must_use]
+pub fn ascii(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|&c| {
+            if (0x20..0x7f).contains(&c) {
+                c as char
+            } else {
+                '.'
+            }
+        })
+        .collect()
 }

@@ -6,4 +6,4 @@ allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 
 # Product/format names that look like code identifiers to doc_markdown.
-doc-valid-idents = ["ReFS", "FSRS", "SUPB", "CHKP", "MSB+", "Minstore", "Ministore", "DevDrive", "CoW", "CRC32c", "CRC64", "SHA-256", "MD5", "libfsrefs", "fsutil", "UCS-2", "USN"]
+doc-valid-idents = ["ReFS", "FSRS", "SUPB", "CHKP", "MSB+", "Minstore", "Ministore", "DevDrive", "CoW", "CRC32c", "CRC64", "SHA-256", "MD5", "libfsrefs", "fsutil", "UCS-2", "USN", "KiB", "MiB", "GiB"]
