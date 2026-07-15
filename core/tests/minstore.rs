@@ -48,8 +48,8 @@ const PAGE: usize = 16384;
 
 /// Build a synthetic v3 metadata-block header (80 bytes) with `signature` and
 /// self block number `block_number`, writing into `page`.
-fn write_header(page: &mut [u8], signature: &[u8; 4], block_number: u64) {
-    page[0..4].copy_from_slice(signature);
+fn write_header(page: &mut [u8], signature: [u8; 4], block_number: u64) {
+    page[0..4].copy_from_slice(&signature);
     page[4..8].copy_from_slice(&2u32.to_le_bytes());
     page[12..16].copy_from_slice(&0xf890_ec89u32.to_le_bytes());
     page[32..40].copy_from_slice(&block_number.to_le_bytes());
@@ -61,7 +61,7 @@ fn write_header(page: &mut [u8], signature: &[u8; 4], block_number: u64) {
 /// `(key, value)` pairs packed as node records. Returns the 16 KiB page.
 fn build_minstore_page(level: u8, is_branch: bool, rows: &[(Vec<u8>, Vec<u8>)]) -> Vec<u8> {
     let mut page = vec![0u8; PAGE];
-    write_header(&mut page, b"MSB+", 42);
+    write_header(&mut page, *b"MSB+", 42);
 
     // Node header offset field @ block+80 (value relative to this field).
     let node_hdr = 0x100usize; // absolute offset of the node header within page
@@ -104,7 +104,7 @@ fn build_minstore_page(level: u8, is_branch: bool, rows: &[(Vec<u8>, Vec<u8>)]) 
     page[nh + 4..nh + 8].copy_from_slice(&((cursor - node_hdr) as u32).to_le_bytes()); // data area end
     page[nh + 8..nh + 12].copy_from_slice(&0u32.to_le_bytes()); // unused
     page[nh + 12] = level;
-    page[nh + 13] = if is_branch { 0x01 } else { 0x00 };
+    page[nh + 13] = u8::from(is_branch);
     page[nh + 16..nh + 20].copy_from_slice(&roff_start_rel.to_le_bytes());
     page[nh + 20..nh + 24].copy_from_slice(&(record_offsets.len() as u32).to_le_bytes());
     page[nh + 24..nh + 28].copy_from_slice(
@@ -166,6 +166,47 @@ fn metablock_page_size_is_16384() {
         REFS_METADATA_PAGE_SIZE, PAGE,
         "ReFS v3 metadata page = 16 KiB"
     );
+}
+
+#[test]
+fn metablock_valid_signature_but_short_header_is_truncated() {
+    // A buffer whose signature matches "MSB+" but is shorter than the 80-byte v3
+    // header must fail loud with Truncated (never read past the buffer).
+    let short = b"MSB+\x02\x00\x00\x00"; // 8 bytes: right sig, far too short
+    let err = MetaBlock::parse(short, "MSB+", 0x1000).unwrap_err();
+    match err {
+        refs_core::RefsError::Truncated {
+            structure,
+            need,
+            have,
+        } => {
+            assert_eq!(structure, "v3 metadata-block header");
+            assert_eq!(need, 80);
+            assert_eq!(have, 8);
+        }
+        other => panic!("expected Truncated, got {other:?}"),
+    }
+}
+
+#[test]
+fn metablock_verify_crc32c_inverted_range_is_none() {
+    // start > end must yield None (not a panic, not a bogus verdict).
+    let data = vec![0u8; 32];
+    assert_eq!(MetaBlock::verify_crc32c(&data, 20, 10, 0), None);
+}
+
+#[test]
+fn bounds_checked_byte_readers_never_panic_out_of_range() {
+    use refs_core::bytes::{ascii, le_u16, u8_at};
+    let buf = [0x41u8, 0x00, 0x7f, 0xff];
+    // In-range reads.
+    assert_eq!(le_u16(&buf, 0), 0x0041);
+    assert_eq!(u8_at(&buf, 0), 0x41);
+    // Out-of-range reads yield 0 rather than panicking.
+    assert_eq!(le_u16(&buf, 100), 0);
+    assert_eq!(u8_at(&buf, 100), 0);
+    // ASCII rendering keeps printables, replaces the rest with '.'.
+    assert_eq!(ascii(&buf), "A..."); // 0x41='A', 0x00/0x7f/0xff -> '.'
 }
 
 // ── CRC (algorithm oracle = published CRC-32C / CRC-64 check values) ─────────
@@ -339,7 +380,7 @@ fn checkpoint_locations_come_from_superblock() {
     let cps = Checkpoint::locations_from_superblock(sb).expect("checkpoint locations");
     assert_eq!(
         cps,
-        vec![157156, 1885500],
+        vec![157_156, 1_885_500],
         "checkpoint block numbers from the real SUPB"
     );
 }
