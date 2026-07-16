@@ -7,7 +7,13 @@ members = ["core", "forensic"]
 # each keeps its own `version` inline.
 [workspace.package]
 edition = "2021"
-rust-version = "1.85"
+# Published-library MSRV — a downstream-facing promise, kept low and CI-verified
+# (the `msrv` job builds refs-core on exactly this floor). The floor is dictated
+# by the `crc` dependency (crc 3.4.0 requires rustc 1.83); our own code needs
+# only 1.82 (the `is_none_or` combinator in minstore.rs), so the dependency
+# dominates. Do NOT raise this to match the dev toolchain — a low, verified MSRV
+# is a deliberate compatibility feature for a published library.
+rust-version = "1.83"
 license = "Apache-2.0"
 repository = "https://github.com/SecurityRonin/refs-forensic"
 homepage = "https://github.com/SecurityRonin/refs-forensic"
