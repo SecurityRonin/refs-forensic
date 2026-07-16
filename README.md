@@ -1,9 +1,23 @@
 # refs-forensic
 
-Pure-Rust, from-scratch reader and forensic auditor for **ReFS** (the Windows
-Resilient File System). `refs-core` parses the on-disk structures; `refs-forensic`
-grades ReFS-specific anomalies as `forensicnomicon::report::Finding`s and recovers
-copy-on-write metadata residue.
+[![refs-core](https://img.shields.io/crates/v/refs-core.svg?label=refs-core)](https://crates.io/crates/refs-core)
+[![refs-forensic](https://img.shields.io/crates/v/refs-forensic.svg?label=refs-forensic)](https://crates.io/crates/refs-forensic)
+[![Docs.rs](https://img.shields.io/docsrs/refs-forensic?label=docs.rs)](https://docs.rs/refs-forensic)
+[![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-blue.svg)](https://www.rust-lang.org)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![Sponsor](https://img.shields.io/badge/sponsor-h4x0r-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/h4x0r)
+
+[![CI](https://github.com/SecurityRonin/refs-forensic/actions/workflows/ci.yml/badge.svg)](https://github.com/SecurityRonin/refs-forensic/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-100%25%20lines-brightgreen.svg)](https://securityronin.github.io/refs-forensic/validation/)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance)
+[![Security audit](https://img.shields.io/badge/security-cargo--deny-brightgreen.svg)](deny.toml)
+[![Docs](https://img.shields.io/badge/docs-mkdocs-blue.svg)](https://securityronin.github.io/refs-forensic/)
+
+**A from-scratch, reverse-engineered reader and graded anomaly auditor for ReFS v3 (the Windows Resilient File System) — walk the boot region, checkpoint, object table, and Minstore B+tree over any byte source, resolve virtual→physical container addresses, and surface copy-on-write metadata residue as evidence.**
+
+`refs-core` parses the on-disk structures; `refs-forensic` grades ReFS-specific
+anomalies as `forensicnomicon::report::Finding`s and recovers copy-on-write
+metadata residue.
 
 > **ReFS is reverse-engineered.** Microsoft publishes **no** official on-disk
 > specification for ReFS. Every structural fact this crate encodes comes from
@@ -15,9 +29,7 @@ copy-on-write metadata residue.
 > Tier-1, by hashing against the Windows driver. This crate does **not** claim
 > Tier-1 for structural findings. See [`docs/validation.md`](docs/validation.md).
 
-## Status — Phase 0 (boot VBR + superblock + version)
-
-`refs-core` currently parses:
+## What `refs-core` parses
 
 - The **boot Volume Boot Record** (FS-recognition structure at offset 0):
   `ReFS`/`FSRS` signatures, sector/cluster geometry, volume serial, and the
@@ -25,8 +37,17 @@ copy-on-write metadata residue.
 - **Version detection + fail-loud gate:** targets ReFS **v3.x**; a v1 (or any
   non-v3) volume is rejected naming the real version bytes, never silently
   misparsed.
-- The primary **superblock** (`SUPB`, at cluster 30): block signature validation
-  and the self-describing block number.
+- The primary **superblock** (`SUPB`, at cluster 30) and the **checkpoint**
+  pair it names: block-signature validation, self-describing block number, and
+  torn/zero-copy detection.
+- The **object table** and **container** layer: virtual→physical address
+  resolution so metadata blocks are reachable by object id.
+- **Minstore B+tree** (`MSB+`) pages — node/leaf walking — and the **directory**
+  entries they carry.
+
+> Validation is **Tier-2** for structural metadata (no ReFS ground-truth corpus
+> exists); deep non-resident directory recovery is oracle-blocked and surfaced as
+> such — see the honest validation state below and [`docs/validation.md`](docs/validation.md).
 
 ```rust
 use refs_core::BootSector;
