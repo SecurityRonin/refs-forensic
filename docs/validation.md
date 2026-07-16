@@ -20,7 +20,7 @@ Consequently:
 - **File content can reach Tier-1** in a later phase, by hashing reconstructed
   file bytes against `Get-FileHash` on the live Windows driver (the only
   authoritative source of true file bytes). The mint already captured those
-  SHA-256 hashes (see [`../tests/data/README.md`](../tests/data/README.md)).
+  SHA-256 hashes (see [`tests/data/README.md`](https://github.com/SecurityRonin/refs-forensic/blob/main/tests/data/README.md)).
 
 This is stated plainly, per the fleet Evidence-Based Rigor discipline: we do
 **not** claim Tier-1 for any structural finding.
@@ -92,7 +92,7 @@ pages via `REFS_TIER2_ORACLE`) plus crafted corruption of the real bytes:
 own whole-block checksum **coverage range is undetermined** in the
 reverse-engineered references (`libfsrefs` marks it `TODO`; an empirical
 brute-force over the real SUPB self-reference did not reproduce it — see
-[`../tests/data/README.md`](../tests/data/README.md)). So `refs-forensic` **never
+[`tests/data/README.md`](https://github.com/SecurityRonin/refs-forensic/blob/main/tests/data/README.md)). So `refs-forensic` **never
 auto-fabricates** a `REFS-METADATA-CRC-MISMATCH` on a clean block. The code is
 emitted **only** via `audit_crc_range(block, offset, start, end, stored)` — a
 caller-supplied, KNOWN coverage range (validated here with a self-contained CRC-32C
@@ -121,7 +121,7 @@ page pairs.
 **Oracle-blocked (stated plainly, never fabricated).** The minted **user** files
 (`dir_a` / `known1.txt` / `nested` / `big.bin`) live in a non-resident band beyond
 the 256 MiB slice, and the source VHD was detached and lost (see
-[`../tests/data/README.md`](../tests/data/README.md) P4 note), so their
+[`tests/data/README.md`](https://github.com/SecurityRonin/refs-forensic/blob/main/tests/data/README.md) P4 note), so their
 **deleted-recovery end-to-end is not reproducible**. F-CARVE returns what IS
 resident and the real-volume test asserts the non-resident files do **not** appear
 — the carver never fabricates the oracle-blocked band.
