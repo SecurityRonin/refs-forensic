@@ -1,0 +1,85 @@
+[package]
+name = "refs-forensic-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+# Standalone workspace: the fuzz crate must not be pulled into the parent
+# (core/forensic) workspace, whose virtual root manifest is not a package.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+# The fuzzed structures (boot VBR, superblock, metadata block + CRC, minstore
+# page + rows, object table, container resolver, directory) are the reader's —
+# they live in refs-core.
+[dependencies.refs-core]
+path = "../core"
+
+# The full audit + carve pipeline (audit_image / recover_residue) lives in
+# refs-forensic.
+[dependencies.refs-forensic]
+path = "../forensic"
+
+[[bin]]
+name = "boot"
+path = "fuzz_targets/boot.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "superblock"
+path = "fuzz_targets/superblock.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "metablock"
+path = "fuzz_targets/metablock.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "minstore"
+path = "fuzz_targets/minstore.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "objecttable"
+path = "fuzz_targets/objecttable.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "container"
+path = "fuzz_targets/container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "directory"
+path = "fuzz_targets/directory.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_forensic"
+path = "fuzz_targets/fuzz_forensic.rs"
+test = false
+doc = false
+bench = false
+
+[profile.release]
+debug = 1
