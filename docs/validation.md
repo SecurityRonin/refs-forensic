@@ -25,6 +25,50 @@ Consequently:
 This is stated plainly, per the fleet Evidence-Based Rigor discipline: we do
 **not** claim Tier-1 for any structural finding.
 
+## Reproduce from a clean clone — no Tier-1 path exists
+
+**ReFS has no downloadable third-party corpus** (Microsoft publishes no on-disk
+spec; the only references — `libfsrefs`, Prade's TSK fork — are reverse-engineered
+and cannot serve as a Tier-1 answer key). So, unlike the other filesystem repos,
+**there is no download URL that reconstitutes a Tier-1 validation here.** The only
+real-volume oracle is a **Tier-2 self-mint** on the live Windows ReFS driver, and
+re-minting it produces a *new, different* Tier-2 volume — it can never reconstitute
+a Tier-1 validation (a re-mint is self-authored by definition).
+
+The two env-gated real-volume oracles are **gitignored** (16 MiB / 256 MiB slices)
+because the source VHD was detached and lost, so they are **not byte-for-byte
+re-mintable**; a fresh mint via the generators in `tests/data/README.md` yields a
+*different* v3.14 volume the tests re-verify against, not the identical bytes.
+
+| Oracle | env var | md5 | committed? | mint command | run command |
+|---|---|---|---|---|---|
+| 16 MiB partition head (`refs_partition_head.bin`) | `REFS_TIER2_ORACLE` | `1a38a7ff099bcd1d58cce9f8e29c9db2` | No (gitignored) | `tests/data/README.md` → "How the oracle was minted" (`mint4.ps1`) | see below |
+| 256 MiB container head (`refs_container_head256.bin`) | `REFS_TIER2_ORACLE256` | `8d09e81af8b939151fe0ae81d90b4623` | No (gitignored) | `tests/data/README.md` → "P3 generator" (`mint5.ps1` / `slice256.ps1`) | see below |
+
+**Always-on (committed, no env var, no mint):** the P0 boot/superblock path runs
+against the committed `refs_boot_superblock.bin` and the small `refs_v314_*.bin`
+metadata pages — `cargo test -p refs-core` and `cargo test -p refs-forensic`
+exercise the whole structural + audit path with zero setup.
+
+**Run commands for the Tier-2 real-volume oracles** (after minting a v3.14 volume
+per `tests/data/README.md` and slicing the head):
+
+```bash
+# 16 MiB head: boot/superblock, Minstore object tree, directory reachability, clean sweep
+REFS_TIER2_ORACLE=/abs/path/to/refs_partition_head.bin \
+  cargo test -p refs-core --test boot full_partition_head_env_gated
+REFS_TIER2_ORACLE=/abs/path/to/refs_partition_head.bin \
+  cargo test -p refs-forensic --test integrity real_volume_clean_sweep_emits_nothing_false_env_gated
+
+# 256 MiB head: container resolve, descent (no-fabrication), F-CARVE CoW residue
+REFS_TIER2_ORACLE256=/abs/path/to/refs_container_head256.bin \
+  cargo test -p refs-core --test container \
+  real_volume_container_resolves_root_directory_page_env_gated
+REFS_TIER2_ORACLE256=/abs/path/to/refs_container_head256.bin \
+  cargo test -p refs-forensic --test carve \
+  real_volume_stale_directory_page_carved_env_gated
+```
+
 ## P0 — boot VBR + superblock + version detection
 
 Validated against a **Tier-2 self-minted ReFS v3.14** volume (Windows 11 Pro,
