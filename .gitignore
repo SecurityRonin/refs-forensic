@@ -1,4 +1,4 @@
-/target
+target/
 
 # The full 16 MiB minted partition head is NOT committed — the 128 KiB
 # boot+superblock slice (refs_boot_superblock.bin) is the committed always-on
